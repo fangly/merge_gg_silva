@@ -1,0 +1,279 @@
+#! /usr/bin/env perl
+
+=head1 NAME
+
+merge_gg_silva - Merge the Greengenes and Silva databases
+
+=head1 DESCRIPTION
+
+This program takes the Greengenes and Silva databases and merges them. Specifically, the entirety of Greengenes (bacteria and archaeea) and the eukaryal portion of Silva will be represented in the output files: a FASTA file with the representative sequences, and a tab-delimited file containing the taxonomic data.
+
+Note that Greengenes has seven levels of taxonomy, but Silva can have many more.
+
+=head1 REQUIRED ARGUMENTS
+
+=over
+
+=item -gs <gg_seqs> | -gg_seqs <gg_seqs>
+
+FASTA file containing the Greengenes reference sequences, e.g. the file 'gg_12_10.fasta' that can be downloaded from L<ftp://greengenes.microbio.me/greengenes_release/gg_12_10/>.
+
+=for Euclid:
+    gg_seqs.type: readable
+
+=item -ss <silva_seqs> | -silva_seqs <silva_seqs>
+
+FASTA file containing the Silva reference sequences, e.g. the file 'SSURef_111_tax_silva_trunc.fasta' that can be downloaded from L<http://www.arb-silva.de/no_cache/download/archive/release_111/Exports/>. The Silva taxonomy is extracted from the description field of every sequence in that file.
+
+=for Euclid:
+    silva_seqs.type: readable
+
+=back
+
+=head1 OPTIONS
+
+=over
+
+=item -gt <gg_taxo> | -gg_taxo <gg_taxo>
+
+File containing the Greengenes taxonomy, e.g. the file 'gg_12_10_taxonomy.txt'
+that can be downloaded from L<ftp://greengenes.microbio.me/greengenes_release/gg_12_10/>.
+If you are using Greengenes 12_10 or later, this file has to be provided. For
+prior Greengenes releases, you can safely omit this option because the taxonomic
+information is extracted from the Greengenes FASTA file.
+
+=for Euclid:
+    gg_taxo.type: readable
+
+=item  -kd <keep_desc> | -keep_desc <keep_desc>
+
+Instead of stripping the original sequence description, keep it in the output sequence file. Default: keep_desc.default
+
+=for Euclid:
+    keep_desc.type: integer, keep_desc == 0 || keep_desc == 1
+    keep_desc.type.error: <keep_desc> must be 0 or 1 (not keep_desc)
+    keep_desc.default: 0
+
+=item  -op <out_prefix> | -out_prefix <out_prefix>
+
+Prefix to determine the filepath and name of the output files (FASTA reference sequences and taxonomy file). Default: out_prefix.default
+
+=for Euclid:
+    out_prefix.type: string
+    out_prefix.default: 'merged_gg_silva'
+
+=back
+
+=head1 VERSION
+
+0.2
+
+=head1 AUTHOR
+
+Florent Angly <florent.angly@gmail.com>
+
+=head1 BUGS
+
+There are undoubtedly serious bugs lurking somewhere in this code.
+Bug reports and other feedback are most welcome.
+
+=head1 COPYRIGHT
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+=cut
+
+
+use strict;
+use warnings;
+use Bio::SeqIO;
+use Getopt::Euclid  qw(:minimal_keys);
+
+
+merge_gg_silva( $ARGV{'gg_seqs'}, $ARGV{'silva_seqs'}, $ARGV{'gg_taxo'}, $ARGV{'out_prefix'}, $ARGV{'keep_desc'} );
+exit;
+
+
+sub merge_gg_silva {
+   my ($gg_seq_file, $silva_seq_file, $gg_taxo_file, $out_prefix, $keep_desc) = @_;
+
+   # Prepare output files
+   my $out_seq_file = $out_prefix.'_seqs.fasta';
+   my $out_seq_stream = Bio::SeqIO->new(
+      -format => 'fasta',
+      -file   => '>'.$out_seq_file,
+      -flush  => 0,
+   );
+   my $out_taxo_file = $out_prefix.'_taxo.txt';
+   open my $out_taxo_stream, '>', $out_taxo_file or die "Error: Could not write file '$out_taxo_file'\n$!\n";
+   print $out_taxo_stream "prokMSA_id\ttaxonomy\n";
+   
+   # Process Greengenes file
+   my $ids = _process_gg($gg_seq_file, $gg_taxo_file, $out_seq_stream, $out_taxo_stream, $keep_desc);
+
+   # Process Silva file
+   _process_silva($silva_seq_file, $out_seq_stream, $out_taxo_stream, $ids, $keep_desc);
+
+   # Close output files
+   $out_seq_stream->close;
+   close $out_taxo_stream;
+
+   print "Done!\n";
+   return 1;
+}
+
+
+sub _process_silva {
+   my ($silva_seq_file, $out_seq_stream, $out_taxo_stream, $ids, $keep_desc) = @_;
+   my $euk_re = qr/^Eukaryota;/i;
+
+   my $silva_in = Bio::SeqIO->new(
+      -format => 'fasta',
+      -file   => $silva_seq_file,
+   );
+
+   while (my $seq = $silva_in->next_seq) {
+      my $id = $seq->id;
+      if (exists $ids->{$id}) {
+         warn "Warning: ID $id exists in both Greengenes and Silva files. Continuing as if nothing happened...\n";
+      }
+
+      # Remove sequence description
+      my $taxo = $seq->desc;
+      $seq->desc('') unless $keep_desc;
+
+      # Examples of Greengenes sequence headers:
+      #    >AAAA02014925.13286.14671 Bacteria;Proteobacteria;Alphaproteobacteria;Rickettsiales;mitochondria;Oryza sativa Indica Group
+      #    >AAAA02038172.160.1957 Eukaryota;Viridiplantae;Streptophyta;Embryophyta;Tracheophyta;Spermatophyta;Magnoliophyta;Liliopsida;Poales;Poaceae;BEP clade;Ehrhartoideae;Oryzeae;Oryza;;Oryza sativa Indica Group
+      #    >AATB01000111.1.1305 Bacteria;Bacteroidetes;Bacteroidia;Bacteroidales;S24-7;mouse gut metagenome
+     
+      # Keeping only eukaryotic sequences
+      next if $taxo !~ $euk_re;
+      
+      # Writing taxonomy and sequence to file
+      print $out_taxo_stream "$id\t$taxo\n";
+      $out_seq_stream->write_seq($seq);
+
+   }
+   $silva_in->close;
+
+   return 1;
+}
+
+
+sub _process_gg {
+   my ($gg_seq_file, $gg_taxo_file, $out_seq_stream, $out_taxo_stream, $keep_desc) = @_;
+   # Process Greengenes file
+
+   # Examples of Greengenes sequence headers for Greengenes prior to 12_10:
+   #    >14 AF068820.2 hydrothermal vent clone VC2.1 Arc13 k__Archaea; p__Euryarchaeota; c__Thermoplasmata; o__Thermoplasmatales; f__Aciduliprofundaceae; otu_204
+   #    >86 U55237.1 Methanobrevibacter woesei str. GS k__Archaea; p__Euryarchaeota; c__Methanobacteria; o__Methanobacteriales; f__Methanobacteriaceae; g__Methanobrevibacter; Unclassified; otu_127
+   # Same headers starting with 12_10:
+   #    >14
+   #    >86
+   # So, since 12_10, one needs to read and parse a separate taxonomy file.
+
+   my $taxo_re = qr/(k__.*);\s*otu/i;
+   my $sep_re  = qr/;\s*/;
+   my $pref_re = qr/[kpcofgs]__/;
+
+   my %prefixes = (
+      1 => 'k__',
+      2 => 'p__',
+      3 => 'c__',
+      4 => 'o__',
+      5 => 'f__',
+      6 => 'g__',
+      7 => 's__',
+   );
+
+   # Parse taxonomy file if provided
+   my $tax_hash;
+   if ($gg_taxo_file) {
+      $tax_hash = _read_taxo($gg_taxo_file);
+   }
+
+
+   my %ids; # save all IDs seen
+
+   my $gg_in = Bio::SeqIO->new(
+      -format => 'fasta',
+      -file   => $gg_seq_file,
+   );
+
+   while (my $seq = $gg_in->next_seq) {
+
+      # Save encountered IDs
+      my $id = $seq->id;
+      $ids{$seq->id} = undef;
+
+      # Remove sequence description
+      my $desc = $seq->desc;
+      $seq->desc('') unless $keep_desc;
+
+      # Get taxonomic string
+      my $taxo;
+      if ($gg_taxo_file) {
+         # Taxonomic string was provided in taxonomy file
+         $taxo = $tax_hash->{$id};
+         if (not defined $taxo) {
+            die "Error: The Greengenes taxonomy string for sequence ID '$id' was not found in the taxonomy file.\n";
+         }
+      } else {
+         # Read taxonomic string from FASTA description field
+         ($taxo) = ($desc =~ $taxo_re);
+         if (not defined $taxo) {
+            die "Error: The Greengenes sequence headers for sequence ID '$id' was not in the form:\n".
+                "   >id accession description taxstring\n".
+                "A Greengenes taxonomy file should be provided, in addition to the FASTA file that was given as input.\n";
+         }
+      }
+
+      # Clean taxonomy string
+      my @taxos = split $sep_re, $taxo;
+      for my $level (1 .. 7) {
+         my $taxo_str = $taxos[$level-1] || '';
+         if ($taxo_str !~ $pref_re) {
+            $taxos[$level-1] = $prefixes{$level};
+         }
+      }
+      $taxo = join ';', @taxos;
+
+      # Write sequence and taxonomy to file
+      print $out_taxo_stream "$id\t$taxo\n";
+      $out_seq_stream->write_seq($seq);
+
+   }
+
+   $gg_in->close;
+
+   return \%ids;
+}
+
+
+sub _read_taxo {
+   # Read tab-delimited taxonomy file: id \t tax_string
+   my ($taxo_file) = @_;
+   my %tax_hash;
+   open my $in, '<', $taxo_file or die "Error: Could not read file $taxo_file\n$!\n";
+   while (my $entry = <$in>) {
+      chomp $entry;
+      next if $entry =~ m/^#/;    # skip comment lines
+      next if $entry =~ m/^\s+$/; # skip blank lines
+      my ($id, $tax_string) = split "\t", $entry;
+      $tax_hash{$id} = $tax_string;
+   }
+   close $in;
+   return \%tax_hash;
+}
