@@ -1,4 +1,4 @@
 merge_gg_silva
 ==============
 
-Combine the goodness of the Greengenes and Silva microbial databases
+Combine the goodness of the Greengenes and Silva into a single microbial database
