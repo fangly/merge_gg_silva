@@ -6,7 +6,7 @@ merge_gg_silva - Merge the Greengenes and Silva databases
 
 =head1 DESCRIPTION
 
-This program takes the Greengenes and Silva databases and merges them. Specifically, the entirety of Greengenes (bacteria and archaeea) and the eukaryal portion of Silva will be represented in the output files: a FASTA file with the representative sequences, and a tab-delimited file containing the taxonomic data.
+This program takes the Greengenes and Silva databases and merges them. Specifically, the entirety of Greengenes (Bacteria and Archaea) and the eukaryal portion of Silva will be represented in the output files: a FASTA file with the representative sequences, and a tab-delimited file containing the taxonomic data.
 
 Note that Greengenes has seven levels of taxonomy, but Silva can have many more.
 
