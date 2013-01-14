@@ -95,11 +95,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 =cut
 
 
+use 5.006;
 use strict;
 use warnings;
 use Bio::SeqIO;
 use Getopt::Euclid  qw(:minimal_keys);
 
+our $VERSION = 0.2;
 
 merge_gg_silva( $ARGV{'gg_seqs'}, $ARGV{'silva_seqs'}, $ARGV{'gg_taxo'}, $ARGV{'out_prefix'}, $ARGV{'keep_desc'} );
 exit;
