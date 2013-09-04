@@ -1,0 +1,4 @@
+
+0.3  
+  - Keep same taxonomic spacing as in original files
+  - Better taxonomic string detection in FASTA headers

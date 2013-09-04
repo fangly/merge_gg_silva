@@ -66,7 +66,7 @@ Prefix to determine the filepath and name of the output files (FASTA reference s
 
 =head1 VERSION
 
-0.2
+0.3
 
 =head1 AUTHOR
 
@@ -101,7 +101,7 @@ use warnings;
 use Bio::SeqIO;
 use Getopt::Euclid  qw(:minimal_keys);
 
-our $VERSION = 0.2;
+our $VERSION = 0.3;
 
 merge_gg_silva( $ARGV{'gg_seqs'}, $ARGV{'silva_seqs'}, $ARGV{'gg_taxo'}, $ARGV{'out_prefix'}, $ARGV{'keep_desc'} );
 exit;
@@ -155,7 +155,7 @@ sub _process_silva {
       my $taxo = $seq->desc;
       $seq->desc('') unless $keep_desc;
 
-      # Examples of Greengenes sequence headers:
+      # Examples of Silva sequence headers:
       #    >AAAA02014925.13286.14671 Bacteria;Proteobacteria;Alphaproteobacteria;Rickettsiales;mitochondria;Oryza sativa Indica Group
       #    >AAAA02038172.160.1957 Eukaryota;Viridiplantae;Streptophyta;Embryophyta;Tracheophyta;Spermatophyta;Magnoliophyta;Liliopsida;Poales;Poaceae;BEP clade;Ehrhartoideae;Oryzeae;Oryza;;Oryza sativa Indica Group
       #    >AATB01000111.1.1305 Bacteria;Bacteroidetes;Bacteroidia;Bacteroidales;S24-7;mouse gut metagenome
@@ -186,19 +186,7 @@ sub _process_gg {
    #    >86
    # So, since 12_10, one needs to read and parse a separate taxonomy file.
 
-   my $taxo_re = qr/(k__.*);\s*otu/i;
-   my $sep_re  = qr/;\s*/;
-   my $pref_re = qr/[kpcofgs]__/;
-
-   my %prefixes = (
-      1 => 'k__',
-      2 => 'p__',
-      3 => 'c__',
-      4 => 'o__',
-      5 => 'f__',
-      6 => 'g__',
-      7 => 's__',
-   );
+   my $taxo_re = qr/(k__.*)(;\s*otu_\d+)?$/i;
 
    # Parse taxonomy file if provided
    my $tax_hash;
@@ -237,20 +225,10 @@ sub _process_gg {
          ($taxo) = ($desc =~ $taxo_re);
          if (not defined $taxo) {
             die "Error: The Greengenes sequence headers for sequence ID '$id' was not in the form:\n".
-                "   >id accession description taxstring\n".
+                "   >id * taxstring *\n".
                 "A Greengenes taxonomy file should be provided, in addition to the FASTA file that was given as input.\n";
          }
       }
-
-      # Clean taxonomy string
-      my @taxos = split $sep_re, $taxo;
-      for my $level (1 .. 7) {
-         my $taxo_str = $taxos[$level-1] || '';
-         if ($taxo_str !~ $pref_re) {
-            $taxos[$level-1] = $prefixes{$level};
-         }
-      }
-      $taxo = join ';', @taxos;
 
       # Write sequence and taxonomy to file
       print $out_taxo_stream "$id\t$taxo\n";
