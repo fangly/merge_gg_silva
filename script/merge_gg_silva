@@ -6,7 +6,11 @@ merge_gg_silva - Merge the Greengenes and Silva databases
 
 =head1 DESCRIPTION
 
-This program takes the Greengenes and Silva databases and merges them. Specifically, the entirety of Greengenes (Bacteria and Archaea) and the eukaryal portion of Silva will be represented in the output files: a FASTA file with the representative sequences, and a tab-delimited file containing the taxonomic data.
+This program takes the Greengenes and Silva databases and merges them.
+Specifically, the entirety of Greengenes (Bacteria and Archaea) and the eukaryal
+portion of Silva will be represented in the output files: a FASTA file with the
+representative sequences (all converted from RNA to DNA if necessary), and a
+tab-delimited file containing the taxonomic data.
 
 Note that Greengenes has seven levels of taxonomy, but Silva can have many more.
 
@@ -66,7 +70,7 @@ Prefix to determine the filepath and name of the output files (FASTA reference s
 
 =head1 VERSION
 
-0.3
+0.4
 
 =head1 AUTHOR
 
@@ -148,7 +152,8 @@ sub _process_silva {
    while (my $seq = $silva_in->next_seq) {
       my $id = $seq->id;
       if (exists $ids->{$id}) {
-         warn "Warning: ID $id exists in both Greengenes and Silva files. Continuing as if nothing happened...\n";
+         warn "Warning: ID $id exists in both Greengenes and Silva files. ".
+            "Continuing as if nothing happened...\n";
       }
 
       # Remove sequence description
@@ -159,9 +164,12 @@ sub _process_silva {
       #    >AAAA02014925.13286.14671 Bacteria;Proteobacteria;Alphaproteobacteria;Rickettsiales;mitochondria;Oryza sativa Indica Group
       #    >AAAA02038172.160.1957 Eukaryota;Viridiplantae;Streptophyta;Embryophyta;Tracheophyta;Spermatophyta;Magnoliophyta;Liliopsida;Poales;Poaceae;BEP clade;Ehrhartoideae;Oryzeae;Oryza;;Oryza sativa Indica Group
       #    >AATB01000111.1.1305 Bacteria;Bacteroidetes;Bacteroidia;Bacteroidales;S24-7;mouse gut metagenome
-     
+
       # Keeping only eukaryotic sequences
       next if $taxo !~ $euk_re;
+
+      # Reverse-transcribe from RNA to DNA if needed
+      $seq = $seq->rev_transcribe() if $seq->alphabet eq 'rna';
       
       # Writing taxonomy and sequence to file
       print $out_taxo_stream "$id\t$taxo\n";
@@ -218,17 +226,23 @@ sub _process_gg {
          # Taxonomic string was provided in taxonomy file
          $taxo = $tax_hash->{$id};
          if (not defined $taxo) {
-            die "Error: The Greengenes taxonomy string for sequence ID '$id' was not found in the taxonomy file.\n";
+            die "Error: The Greengenes taxonomy string for sequence ID '$id' ".
+               "was not found in the taxonomy file.\n";
          }
       } else {
          # Read taxonomic string from FASTA description field
          ($taxo) = ($desc =~ $taxo_re);
          if (not defined $taxo) {
-            die "Error: The Greengenes sequence headers for sequence ID '$id' was not in the form:\n".
-                "   >id * taxstring *\n".
-                "A Greengenes taxonomy file should be provided, in addition to the FASTA file that was given as input.\n";
+            die "Error: The Greengenes sequence headers for sequence ID '$id' ".
+               "was not in the form:\n".
+               "   >id * taxstring *\n".
+               "A Greengenes taxonomy file should be provided, in addition to ".
+               "the FASTA file that was given as input.\n";
          }
       }
+
+      # Reverse-transcribe from RNA to DNA if needed
+      $seq = $seq->rev_transcribe() if $seq->alphabet eq 'rna';
 
       # Write sequence and taxonomy to file
       print $out_taxo_stream "$id\t$taxo\n";
@@ -257,3 +271,4 @@ sub _read_taxo {
    close $in;
    return \%tax_hash;
 }
+
